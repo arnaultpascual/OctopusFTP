@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# macOS
+.DS_Store
+
 # Distribution / packaging
 .Python
 build/
@@ -14,7 +17,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/  # COMMENTED OUT - we bundle CustomTkinter in lib/
 lib64/
 parts/
 sdist/
