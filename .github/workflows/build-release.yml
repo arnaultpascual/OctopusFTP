@@ -1,0 +1,146 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags (e.g., v0.8, v1.0.0)
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pillow
+
+      - name: Build Windows executable
+        run: |
+          cd build_scripts
+          .\build_windows.bat
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OctopusFTP-Windows
+          path: dist/OctopusFTP.exe
+          retention-days: 7
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python with Tkinter
+        run: |
+          brew install python-tk@3.12
+
+      - name: Build macOS application
+        run: |
+          cd build_scripts
+          chmod +x build_mac.sh
+          ./build_mac.sh
+
+      - name: Package macOS app
+        run: |
+          cd dist
+          zip -r OctopusFTP-macOS.app.zip OctopusFTP.app
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OctopusFTP-macOS
+          path: dist/OctopusFTP-macOS.app.zip
+          retention-days: 7
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+          python -m pip install --upgrade pip
+          pip install pyinstaller pillow
+
+      - name: Build Linux executable
+        run: |
+          cd build_scripts
+          chmod +x build_linux.sh
+          ./build_linux.sh
+
+      - name: Package Linux executable
+        run: |
+          cd dist
+          tar -czf OctopusFTP-Linux.tar.gz OctopusFTP
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OctopusFTP-Linux
+          path: dist/OctopusFTP-Linux.tar.gz
+          retention-days: 7
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')  # Only create release for tags
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true  # Create as draft so you can review before publishing
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') || contains(github.ref, 'rc') || startsWith(github.ref, 'refs/tags/v0.') }}
+          files: |
+            artifacts/OctopusFTP-Windows/OctopusFTP.exe
+            artifacts/OctopusFTP-macOS/OctopusFTP-macOS.app.zip
+            artifacts/OctopusFTP-Linux/OctopusFTP-Linux.tar.gz
+          body: |
+            ## 🎉 OctopusFTP ${{ github.ref_name }}
+
+            ### 📥 Downloads
+
+            - **Windows**: Download `OctopusFTP.exe` and run
+            - **macOS**: Download `OctopusFTP-macOS.app.zip`, extract, and run
+            - **Linux**: Download `OctopusFTP-Linux.tar.gz`, extract, and run
+
+            ### 📝 Changes
+
+            <!-- Add your release notes here before publishing -->
+
+            ---
+
+            🐙 Built with [OctopusFTP](https://github.com/arnaultpascual/OctopusFTP)

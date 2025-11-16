@@ -744,12 +744,20 @@ class FTPDownloaderGUI:
                 widgets["pause_btn"].configure(text="⏸ Pause", fg_color="#1f538d", hover_color="#14375e")
 
     def _stop_download(self, download_id):
-        """Stop download"""
+        """Stop download and delete partial file"""
         if download_id in self.active_downloads:
             info = self.active_downloads[download_id]
             if info["status"] in ["downloading", "paused"]:
                 info["ftp_instance"].stop()
                 info["status"] = "stopped"
+
+                # Delete partial file if it exists
+                local_path = info.get("local_path")
+                if local_path and os.path.exists(local_path):
+                    try:
+                        os.remove(local_path)
+                    except Exception as e:
+                        print(f"Could not delete partial file {local_path}: {e}")
 
                 widgets = self.download_widgets[download_id]
                 widgets["status"].configure(text="⏹ Stopped", text_color="#FF6B35")
@@ -758,13 +766,22 @@ class FTPDownloaderGUI:
                 widgets["clear_btn"].configure(state="normal")
 
     def _clear_download(self, download_id):
-        """Clear download from list"""
+        """Clear download from list and delete partial file if incomplete"""
+        # Delete partial file if download was not completed
+        if download_id in self.active_downloads:
+            info = self.active_downloads[download_id]
+            if info["status"] not in ["complete"]:
+                local_path = info.get("local_path")
+                if local_path and os.path.exists(local_path):
+                    try:
+                        os.remove(local_path)
+                    except Exception as e:
+                        print(f"Could not delete partial file {local_path}: {e}")
+            del self.active_downloads[download_id]
+
         if download_id in self.download_widgets:
             self.download_widgets[download_id]["card"].destroy()
             del self.download_widgets[download_id]
-
-        if download_id in self.active_downloads:
-            del self.active_downloads[download_id]
 
     def _update_download_status(self, download_id, text, status):
         """Update download status"""
