@@ -8,54 +8,77 @@ echo "OctopusFTP - Mac Build Script"
 echo "========================================"
 echo ""
 
-# Check if Python 3 is installed
-if ! command -v python3 &> /dev/null; then
-    echo "ERROR: Python 3 is not installed"
-    echo "Please install Python 3.8+ from https://www.python.org/"
-    exit 1
+# Get project root (parent of build_scripts)
+cd "$(dirname "$0")/.."
+PROJECT_ROOT=$(pwd)
+
+# Use virtual environment with Homebrew Python 3.12 (has modern Tcl/Tk 9.0)
+VENV_DIR="$PROJECT_ROOT/build_env"
+VENV_PYTHON="$VENV_DIR/bin/python"
+VENV_PYINSTALLER="$VENV_DIR/bin/pyinstaller"
+
+# Check if virtual environment exists
+if [ ! -d "$VENV_DIR" ]; then
+    echo "[0/4] Creating build environment with Homebrew Python 3.12..."
+    if ! command -v /opt/homebrew/opt/python@3.12/bin/python3.12 &> /dev/null; then
+        echo "ERROR: Homebrew Python 3.12 not found"
+        echo "Please install it with: brew install python-tk@3.12"
+        exit 1
+    fi
+
+    /opt/homebrew/opt/python@3.12/bin/python3.12 -m venv "$VENV_DIR"
+    $VENV_PYTHON -m pip install --upgrade pip --quiet
+    $VENV_PYTHON -m pip install pyinstaller pillow --quiet
+    echo "✓ Build environment created"
+    echo ""
 fi
 
-echo "[1/3] Installing PyInstaller..."
-python3 -m pip install --upgrade pip
-python3 -m pip install pyinstaller
+echo "Build Python: $VENV_PYTHON"
+$VENV_PYTHON --version
+
+echo ""
+echo "[1/4] Creating icon..."
+cd build_scripts
+$VENV_PYTHON create_icon.py
 if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to install PyInstaller"
-    exit 1
+    echo "Warning: Failed to create icon, continuing without custom icon"
 fi
 
 echo ""
-echo "[2/3] Building application..."
-cd ..
+echo "[2/4] Preparing build..."
+cd "$PROJECT_ROOT"
+
+echo ""
+echo "[3/4] Building application..."
 
 # Detect architecture
 ARCH=$(uname -m)
 echo "Detected architecture: $ARCH"
 
-# Build for Apple Silicon (arm64) or Intel (x86_64)
-if [ "$ARCH" = "arm64" ]; then
-    echo "Building for Apple Silicon (M1/M2/M3)..."
-    python3 -m PyInstaller \
-        --onedir \
-        --windowed \
-        --name="OctopusFTP" \
-        --target-arch arm64 \
-        --collect-all customtkinter \
-        --collect-all darkdetect \
-        --collect-all packaging \
-        --hidden-import='PIL._tkinter_finder' \
-        main.py
+# Check if icon exists
+ICON_PATH="$PROJECT_ROOT/build_scripts/assets/OctopusFTP.icns"
+ICON_ARG=""
+if [ -f "$ICON_PATH" ]; then
+    echo "Using custom icon: $ICON_PATH"
+    ICON_ARG="--icon=$ICON_PATH"
 else
-    echo "Building for Intel x86_64..."
-    python3 -m PyInstaller \
-        --onedir \
-        --windowed \
-        --name="OctopusFTP" \
-        --collect-all customtkinter \
-        --collect-all darkdetect \
-        --collect-all packaging \
-        --hidden-import='PIL._tkinter_finder' \
-        main.py
+    echo "Warning: Icon not found at $ICON_PATH, using default"
 fi
+
+# Build with modern Tcl/Tk from Homebrew Python
+echo "Building for $ARCH with modern Tcl/Tk 9.0..."
+
+$VENV_PYINSTALLER \
+    --windowed \
+    --onedir \
+    --name="OctopusFTP" \
+    --paths="$PROJECT_ROOT/lib" \
+    --add-data="$PROJECT_ROOT/lib:lib" \
+    --hidden-import='PIL._tkinter_finder' \
+    --osx-bundle-identifier com.octopusftp.app \
+    --noconfirm \
+    $ICON_ARG \
+    main.py
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Build failed"
@@ -63,7 +86,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo ""
-echo "[3/3] Cleaning up..."
+echo "[4/4] Cleaning up..."
 # Keep the application, remove build artifacts
 rm -rf build
 rm -f OctopusFTP.spec

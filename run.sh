@@ -19,11 +19,11 @@ test_python() {
     return 1
 }
 
-# Try Homebrew Python with python-tk@3.12 first (best for modern macOS)
-# Check keg-only installation first
+# Try Homebrew Python with python-tk@3.12 first (BEST for macOS - has Tk 9.0+)
+# This is the recommended installation for modern macOS
 BREW_PYTHON312="/opt/homebrew/opt/python@3.12/bin/python3.12"
 if test_python "$BREW_PYTHON312"; then
-    echo "✓ Using Homebrew Python 3.12 with Tkinter"
+    echo "✓ Using Homebrew Python 3.12 with Tkinter (Recommended)"
     $BREW_PYTHON312 main.py
     exit $?
 fi
@@ -35,7 +35,7 @@ if test_python "/opt/homebrew/bin/python3.12"; then
     exit $?
 fi
 
-# Try regular Homebrew python3
+# Try regular Homebrew python3 (any version)
 if test_python "/opt/homebrew/bin/python3"; then
     echo "✓ Using Homebrew Python with Tkinter"
     /opt/homebrew/bin/python3 main.py

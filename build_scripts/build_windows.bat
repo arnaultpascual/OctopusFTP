@@ -16,19 +16,36 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/3] Installing PyInstaller...
-python -m pip install --upgrade pip
-python -m pip install pyinstaller
+echo [1/4] Installing build dependencies...
+python -m pip install --upgrade pip --quiet
+python -m pip install pyinstaller pillow --quiet
 if errorlevel 1 (
-    echo ERROR: Failed to install PyInstaller
+    echo ERROR: Failed to install dependencies
     pause
     exit /b 1
 )
 
 echo.
-echo [2/3] Building executable...
+echo [2/4] Creating icon...
+python create_icon.py
+if errorlevel 1 (
+    echo Warning: Failed to create icon, continuing without custom icon
+)
+
+echo.
+echo [3/4] Building executable...
 cd ..
-pyinstaller --onefile --windowed --name="OctopusFTP" --icon=NONE main.py
+
+REM Check if icon exists
+if exist "build_scripts\assets\OctopusFTP.ico" (
+    set ICON_ARG=--icon=build_scripts\assets\OctopusFTP.ico
+    echo Using custom icon
+) else (
+    set ICON_ARG=
+    echo Warning: Icon not found, using default
+)
+
+pyinstaller --onefile --windowed --name="OctopusFTP" --paths=lib --add-data "lib;lib" --hidden-import=PIL._tkinter_finder %ICON_ARG% main.py
 if errorlevel 1 (
     echo ERROR: Build failed
     pause
@@ -36,7 +53,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] Cleaning up...
+echo [4/4] Cleaning up...
 REM Keep the executable, remove build artifacts
 if exist build rmdir /s /q build
 if exist OctopusFTP.spec del OctopusFTP.spec
