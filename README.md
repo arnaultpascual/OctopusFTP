@@ -26,6 +26,8 @@ A high-performance multi-connection FTP/FTPS downloader with graphical interface
 ### Advanced Features
 - **Configurable Connections**: Adjust the number of parallel connections (1-16)
 - **Custom Rotation Interval**: Set connection rotation timing (recommended: 30 seconds)
+- **Speed Limiting**: Set maximum download speed (MB/s) to control bandwidth usage
+- **Real-time Bandwidth Graphs**: Visual representation of download speed over time
 - **Automatic Directory Creation**: Preserves folder structure in downloads
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 
@@ -57,7 +59,9 @@ The easiest way to get started is to download the latest release for your platfo
 
 If you prefer to run from source or the pre-built version doesn't work on your system:
 
-**Prerequisites**: Python 3.8 or higher (no external dependencies required)
+**Prerequisites**:
+- Python 3.8 or higher
+- matplotlib (for bandwidth graphs)
 
 1. **Clone the repository**
    ```bash
@@ -65,7 +69,16 @@ If you prefer to run from source or the pre-built version doesn't work on your s
    cd OctopusFTP
    ```
 
-2. **Run the application**
+2. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   Or manually:
+   ```bash
+   pip install matplotlib
+   ```
+
+3. **Run the application**
 
    **On Windows:**
    ```cmd
@@ -116,6 +129,7 @@ brew install python-tk@3.12
 3. Configure download settings:
    - **Connections**: Number of parallel connections (4 recommended)
    - **Rotation**: Connection rotation interval in seconds (30 recommended)
+   - **Max Speed**: Maximum download speed in MB/s (0 = unlimited)
 4. Click **⬇ Download Selected**
 
 ### 4. Manage Downloads
@@ -125,6 +139,7 @@ Each active download shows:
 - Download speed (MB/s)
 - Active connections count
 - Elapsed time and ETA
+- **Real-time bandwidth graph**: Visual chart showing speed over the last 60 seconds
 
 Controls for each download:
 - **⏸ Pause / ▶ Resume**: Pause and resume the download
@@ -145,6 +160,13 @@ Controls for each download:
 - Recommended: 30 seconds
 - Prevents connection timeouts and can help avoid bandwidth throttling
 
+**Maximum Speed (Speed Limiting)**:
+- Range: 0 (unlimited) to any positive number (MB/s)
+- Default: 0 (unlimited)
+- Purpose: Control bandwidth usage, prevent network congestion
+- Example: Set to 5 to limit total download speed to 5 MB/s
+- Note: Speed is distributed equally across all connections
+
 ### Saved Connections
 
 Connection presets are stored in `~/.octopusftp/connections.json`
@@ -156,8 +178,9 @@ Connection presets are stored in `~/.octopusftp/connections.json`
 ### Architecture
 
 **Core Components**:
-- `ftp_engine.py`: Multi-threaded FTP download engine with connection rotation
+- `ftp_engine.py`: Multi-threaded FTP download engine with connection rotation and speed limiting
 - `ftp_gui.py`: CustomTkinter-based graphical interface
+- `bandwidth_chart.py`: Real-time bandwidth visualization using matplotlib
 - `main.py`: Application entry point
 
 ### How Multi-Connection Downloads Work
@@ -215,11 +238,12 @@ Want to build your own executables? See the detailed [Build Instructions](build_
 
 ### Runtime Requirements
 - Python 3.8+
-- Standard library only (no pip dependencies for runtime)
+- matplotlib 3.5.0+ (for bandwidth graphs)
+- Included CustomTkinter library (bundled in `lib/` directory)
 
 ### Development/Build Requirements
 - PyInstaller 5.0+ (for building executables)
-- Included CustomTkinter library (bundled in `lib/` directory)
+- Pillow (for icon creation during build)
 
 ## 🤝 Contributing
 
@@ -255,14 +279,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺 Roadmap
 
-Planned features:
+### ✅ Completed Features
+- [x] Speed limiting options
+- [x] Bandwidth graphs
+
+### 🔮 Planned Features
 - [ ] Upload functionality
 - [ ] SFTP support (SSH File Transfer Protocol)
-- [ ] Speed limiting options
 - [ ] Proxy support
 - [ ] Download scheduling
 - [ ] Browser integration
-- [ ] Bandwidth graphs
 - [ ] File integrity verification (checksums)
 - [ ] Multi-language support
 
