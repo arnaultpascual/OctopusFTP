@@ -2,6 +2,10 @@
 Bandwidth Chart Widget - Real-time bandwidth visualization for OctopusFTP
 """
 
+# Set matplotlib backend before any other matplotlib imports
+import matplotlib
+matplotlib.use('TkAgg')
+
 import customtkinter as ctk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg

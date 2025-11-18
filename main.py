@@ -10,6 +10,10 @@ import os
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Set matplotlib backend before importing GUI components
+import matplotlib
+matplotlib.use('TkAgg')
+
 from ftp_gui import FTPDownloaderGUI
 
 def main():
