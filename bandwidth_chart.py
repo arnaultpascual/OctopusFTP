@@ -151,7 +151,7 @@ class CompactBandwidthChart(ctk.CTkFrame):
         # Create matplotlib figure with dark theme
         plt.style.use('dark_background')
         self.figure = Figure(figsize=(width / 100, height / 100), dpi=100)
-        self.figure.patch.set_facecolor('transparent')
+        self.figure.patch.set_facecolor('#2B2B2B')  # Match CustomTkinter dark background
 
         self.ax = self.figure.add_subplot(111)
         self.ax.set_facecolor('#1E1E1E')
