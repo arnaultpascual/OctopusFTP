@@ -5,6 +5,12 @@
 
 A high-performance multi-connection FTP/FTPS downloader with graphical interface.
 
+## 📸 Screenshot
+
+![OctopusFTP Interface](screenshots/main-interface.png)
+
+*Modern dark-themed interface with real-time bandwidth graphs, multi-connection downloads, and file integrity verification*
+
 ## ✨ Features
 
 ### Core Capabilities
