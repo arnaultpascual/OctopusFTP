@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from ftp_engine import MultiConnectionFTP, FileInfo
 from bandwidth_chart import CompactBandwidthChart
+from checksum_utils import ChecksumCalculator
 
 # Set appearance mode and color theme
 ctk.set_appearance_mode("dark")  # Modes: "System" (default), "Dark", "Light"
@@ -663,7 +664,10 @@ class FTPDownloaderGUI:
             "last_update": time.time(),
             "ftp_instance": dedicated_ftp,  # Each download has its own FTP instance
             "speed_history": [],  # List of (timestamp, total_speed_mbps) tuples
-            "max_history_duration": 120  # Keep last 120 seconds of history
+            "max_history_duration": 120,  # Keep last 120 seconds of history
+            "checksum": None,  # Will be calculated after download completes
+            "checksum_algorithm": "SHA-256",  # Default algorithm
+            "checksum_status": None  # None, "calculating", "verified", "failed"
         }
 
         # Create download widget
@@ -683,6 +687,13 @@ class FTPDownloaderGUI:
                     avg_speed = self.active_downloads[download_id]["size"] / elapsed if elapsed > 0 else 0
                     final_msg = f"✓ Complete! {self._format_size(file_info.size)} • Avg: {self._format_speed(avg_speed)}"
                     self.root.after(0, lambda msg=final_msg: self._update_download_status(download_id, msg, "complete"))
+
+                    # Calculate checksum in background
+                    threading.Thread(
+                        target=self._calculate_checksum_async,
+                        args=(download_id,),
+                        daemon=True
+                    ).start()
                 else:
                     self.active_downloads[download_id]["status"] = "error"
                     error_msg = f"✗ Error: {message}"
@@ -726,9 +737,14 @@ class FTPDownloaderGUI:
                                      fg_color="transparent")
         chart.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
 
+        # Checksum label
+        checksum_label = ctk.CTkLabel(card, text="🔒 Checksum will be calculated after download",
+                                      font=ctk.CTkFont(size=8), anchor="w", text_color="#888888")
+        checksum_label.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 5))
+
         # Buttons
         btn_frame = ctk.CTkFrame(card, fg_color="transparent")
-        btn_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
+        btn_frame.grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 10))
 
         # Center buttons
         btn_frame.grid_columnconfigure(0, weight=1)
@@ -754,6 +770,7 @@ class FTPDownloaderGUI:
             "title": title,
             "status": status,
             "chart": chart,
+            "checksum_label": checksum_label,
             "pause_btn": pause_btn,
             "stop_btn": stop_btn,
             "clear_btn": clear_btn
@@ -815,6 +832,70 @@ class FTPDownloaderGUI:
         if download_id in self.download_widgets:
             self.download_widgets[download_id]["card"].destroy()
             del self.download_widgets[download_id]
+
+    def _calculate_checksum_async(self, download_id):
+        """Calculate checksum for downloaded file in background"""
+        if download_id not in self.active_downloads:
+            return
+
+        info = self.active_downloads[download_id]
+        local_path = info.get("local_path")
+        algorithm = info.get("checksum_algorithm", "SHA-256")
+
+        if not local_path or not os.path.exists(local_path):
+            return
+
+        try:
+            # Update status to calculating
+            info["checksum_status"] = "calculating"
+            self.root.after(0, lambda: self._update_checksum_display(download_id))
+
+            # Calculate checksum
+            checksum = ChecksumCalculator.calculate_file_hash(local_path, algorithm)
+            info["checksum"] = checksum
+            info["checksum_status"] = "verified"
+
+            # Update UI
+            self.root.after(0, lambda: self._update_checksum_display(download_id))
+
+        except Exception as e:
+            print(f"Checksum calculation failed: {e}")
+            info["checksum_status"] = "failed"
+            info["checksum"] = f"Error: {str(e)}"
+            self.root.after(0, lambda: self._update_checksum_display(download_id))
+
+    def _update_checksum_display(self, download_id):
+        """Update checksum display in download widget"""
+        if download_id not in self.download_widgets or download_id not in self.active_downloads:
+            return
+
+        widgets = self.download_widgets[download_id]
+        info = self.active_downloads[download_id]
+
+        if "checksum_label" not in widgets:
+            return
+
+        checksum = info.get("checksum")
+        status = info.get("checksum_status")
+        algorithm = info.get("checksum_algorithm", "SHA-256")
+
+        if status == "calculating":
+            widgets["checksum_label"].configure(
+                text=f"🔒 Calculating {algorithm}...",
+                text_color="#FFA500"
+            )
+        elif status == "verified" and checksum:
+            # Truncate checksum for display
+            display_hash = checksum[:16] + "..." if len(checksum) > 16 else checksum
+            widgets["checksum_label"].configure(
+                text=f"🔒 {algorithm}: {display_hash}",
+                text_color="#4CAF50"
+            )
+        elif status == "failed":
+            widgets["checksum_label"].configure(
+                text=f"🔒 {algorithm}: Calculation failed",
+                text_color="#f44336"
+            )
 
     def _update_download_status(self, download_id, text, status):
         """Update download status"""

@@ -28,6 +28,7 @@ A high-performance multi-connection FTP/FTPS downloader with graphical interface
 - **Custom Rotation Interval**: Set connection rotation timing (recommended: 30 seconds)
 - **Speed Limiting**: Set maximum download speed (MB/s) to control bandwidth usage
 - **Real-time Bandwidth Graphs**: Visual representation of download speed over time
+- **File Integrity Verification**: Automatic checksum calculation (SHA-256) after download
 - **Automatic Directory Creation**: Preserves folder structure in downloads
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 
@@ -140,6 +141,7 @@ Each active download shows:
 - Active connections count
 - Elapsed time and ETA
 - **Real-time bandwidth graph**: Visual chart showing speed over the last 60 seconds
+- **File checksum**: SHA-256 hash calculated automatically after download completes
 
 Controls for each download:
 - **⏸ Pause / ▶ Resume**: Pause and resume the download
@@ -282,6 +284,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### ✅ Completed Features
 - [x] Speed limiting options
 - [x] Bandwidth graphs
+- [x] File integrity verification (checksums)
 
 ### 🔮 Planned Features
 - [ ] Upload functionality
@@ -289,7 +292,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Proxy support
 - [ ] Download scheduling
 - [ ] Browser integration
-- [ ] File integrity verification (checksums)
 - [ ] Multi-language support
 
 ---
