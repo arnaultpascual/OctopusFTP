@@ -18,7 +18,7 @@ if errorlevel 1 (
 
 echo [1/4] Installing build dependencies...
 python -m pip install --upgrade pip --quiet
-python -m pip install pyinstaller pillow --quiet
+python -m pip install pyinstaller pillow matplotlib --quiet
 if errorlevel 1 (
     echo ERROR: Failed to install dependencies
     pause
@@ -45,7 +45,7 @@ if exist "build_scripts\assets\OctopusFTP.ico" (
     echo Warning: Icon not found, using default
 )
 
-pyinstaller --onefile --windowed --name="OctopusFTP" --paths=lib --add-data "lib;lib" --hidden-import=PIL._tkinter_finder %ICON_ARG% main.py
+pyinstaller --onefile --windowed --name="OctopusFTP" --paths=lib --add-data "lib;lib" --hidden-import=PIL._tkinter_finder --hidden-import=matplotlib.backends.backend_tkagg --hidden-import=numpy --collect-all matplotlib %ICON_ARG% main.py
 if errorlevel 1 (
     echo ERROR: Build failed
     pause

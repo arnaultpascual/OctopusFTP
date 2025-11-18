@@ -24,7 +24,7 @@ fi
 
 echo "[1/4] Installing build dependencies..."
 python3 -m pip install --upgrade pip --quiet
-python3 -m pip install pyinstaller pillow --quiet
+python3 -m pip install pyinstaller pillow matplotlib --quiet
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to install dependencies"
     exit 1
@@ -59,6 +59,9 @@ python3 -m PyInstaller \
     --paths="$PROJECT_ROOT/lib" \
     --add-data="$PROJECT_ROOT/lib:lib" \
     --hidden-import=PIL._tkinter_finder \
+    --hidden-import=matplotlib.backends.backend_tkagg \
+    --hidden-import=numpy \
+    --collect-all matplotlib \
     $ICON_ARG \
     main.py
 
