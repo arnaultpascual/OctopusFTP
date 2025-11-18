@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 from ftp_engine import MultiConnectionFTP, FileInfo
+from bandwidth_chart import CompactBandwidthChart
 
 # Set appearance mode and color theme
 ctk.set_appearance_mode("dark")  # Modes: "System" (default), "Dark", "Light"
@@ -154,6 +155,15 @@ class FTPDownloaderGUI:
         ctk.CTkLabel(config_frame, text="Rotation (sec):").pack(side="left", padx=(20, 5))
         self.rotation_var = ctk.IntVar(value=30)
         ctk.CTkEntry(config_frame, width=50, textvariable=self.rotation_var).pack(side="left", padx=5)
+
+        ctk.CTkLabel(config_frame, text="Max Speed (MB/s):").pack(side="left", padx=(20, 5))
+        self.speed_limit_var = ctk.StringVar(value="0")  # 0 = unlimited
+        speed_entry = ctk.CTkEntry(config_frame, width=50, textvariable=self.speed_limit_var, placeholder_text="0")
+        speed_entry.pack(side="left", padx=5)
+
+        # Add tooltip label
+        ctk.CTkLabel(config_frame, text="(0 = unlimited)", text_color="gray",
+                    font=ctk.CTkFont(size=9)).pack(side="left", padx=(0, 10))
 
     def _create_browser_content(self, parent):
         """Create file browser frame"""
@@ -392,7 +402,14 @@ class FTPDownloaderGUI:
 
         def connect_thread():
             try:
-                ftp = MultiConnectionFTP(host, user, password, port, use_ssl)
+                # Get speed limit (0 = unlimited)
+                try:
+                    max_speed = float(self.speed_limit_var.get())
+                    max_speed = max_speed if max_speed > 0 else None
+                except (ValueError, AttributeError):
+                    max_speed = None
+
+                ftp = MultiConnectionFTP(host, user, password, port, use_ssl, max_speed)
                 success, message = ftp.test_connection()
 
                 if success:
@@ -617,12 +634,20 @@ class FTPDownloaderGUI:
 
         # Create a dedicated FTP instance for this download
         # This ensures pause/stop controls work independently for each file
+        # Get speed limit from current settings
+        try:
+            max_speed = float(self.speed_limit_var.get())
+            max_speed = max_speed if max_speed > 0 else None
+        except (ValueError, AttributeError):
+            max_speed = None
+
         dedicated_ftp = MultiConnectionFTP(
             self.ftp.host,
             self.ftp.user,
             self.ftp.password,
             self.ftp.port,
-            self.ftp.use_ssl
+            self.ftp.use_ssl,
+            max_speed
         )
 
         # Initialize tracking
@@ -636,7 +661,9 @@ class FTPDownloaderGUI:
             "start_time": time.time(),
             "status": "downloading",
             "last_update": time.time(),
-            "ftp_instance": dedicated_ftp  # Each download has its own FTP instance
+            "ftp_instance": dedicated_ftp,  # Each download has its own FTP instance
+            "speed_history": [],  # List of (timestamp, total_speed_mbps) tuples
+            "max_history_duration": 120  # Keep last 120 seconds of history
         }
 
         # Create download widget
@@ -692,11 +719,16 @@ class FTPDownloaderGUI:
         # Progress label
         status = ctk.CTkLabel(card, text=f"Starting... ({num_connections} connections)",
                             font=ctk.CTkFont(size=9), anchor="w", text_color="#00A8E8")
-        status.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        status.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 5))
+
+        # Bandwidth chart (compact version)
+        chart = CompactBandwidthChart(card, width=280, height=80,
+                                     fg_color="transparent")
+        chart.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
 
         # Buttons
         btn_frame = ctk.CTkFrame(card, fg_color="transparent")
-        btn_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        btn_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
 
         # Center buttons
         btn_frame.grid_columnconfigure(0, weight=1)
@@ -721,6 +753,7 @@ class FTPDownloaderGUI:
             "card": card,
             "title": title,
             "status": status,
+            "chart": chart,
             "pause_btn": pause_btn,
             "stop_btn": stop_btn,
             "clear_btn": clear_btn
@@ -791,17 +824,29 @@ class FTPDownloaderGUI:
         widgets = self.download_widgets[download_id]
         widgets["status"].configure(text=text)
 
+        # Update bandwidth chart if downloading
+        if status == "downloading" and download_id in self.active_downloads:
+            speed_history = self.active_downloads[download_id].get("speed_history", [])
+            if "chart" in widgets:
+                widgets["chart"].update(speed_history)
+
         # Color coding
         if status == "complete":
             widgets["status"].configure(text_color="#00D084")
             widgets["pause_btn"].configure(state="disabled")
             widgets["stop_btn"].configure(state="disabled")
             widgets["clear_btn"].configure(state="normal")
+            # Clear chart on completion
+            if "chart" in widgets:
+                widgets["chart"].clear()
         elif status == "error":
             widgets["status"].configure(text_color="#E63946")
             widgets["pause_btn"].configure(state="disabled")
             widgets["stop_btn"].configure(state="disabled")
             widgets["clear_btn"].configure(state="normal")
+            # Clear chart on error
+            if "chart" in widgets:
+                widgets["chart"].clear()
         elif status == "downloading":
             widgets["status"].configure(text_color="#00A8E8")
         elif status == "paused":
@@ -842,6 +887,15 @@ class FTPDownloaderGUI:
             remaining = info["size"] - total_bytes
             eta = remaining / total_speed if total_speed > 0 else 0
             active_conns = sum(1 for s in info["speeds"] if s > 0)
+
+            # Update speed history for bandwidth graphs
+            current_time = time.time()
+            speed_mbps = total_speed / (1024 * 1024)  # Convert bytes/s to MB/s
+            info["speed_history"].append((current_time, speed_mbps))
+
+            # Clean up old history entries (keep only last max_history_duration seconds)
+            cutoff_time = current_time - info["max_history_duration"]
+            info["speed_history"] = [(t, s) for t, s in info["speed_history"] if t >= cutoff_time]
 
             # Modern status line
             status_line = (

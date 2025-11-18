@@ -1,6 +1,8 @@
 # OctopusFTP - Multi-Connection FTP Downloader
-# No external dependencies required - uses Python standard library only
 # Tested with Python 3.8+
+
+# Runtime dependencies:
+matplotlib>=3.5.0
 
 # For building executables (development only):
 # pyinstaller>=5.0

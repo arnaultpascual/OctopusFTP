@@ -54,7 +54,7 @@ class FileInfo:
 class MultiConnectionFTP:
     """Multi-connection FTP downloader with connection rotation"""
 
-    def __init__(self, host: str, user: str, password: str, port: int = 21, use_ssl: bool = False):
+    def __init__(self, host: str, user: str, password: str, port: int = 21, use_ssl: bool = False, max_speed_mbps: Optional[float] = None):
         """
         Initialize FTP connection parameters
 
@@ -64,12 +64,14 @@ class MultiConnectionFTP:
             password: Password
             port: FTP port (default 21)
             use_ssl: Use FTPS (FTP over SSL/TLS)
+            max_speed_mbps: Maximum download speed in MB/s (None = unlimited)
         """
         self.host = host
         self.user = user
         self.password = password
         self.port = port
         self.use_ssl = use_ssl
+        self.max_speed_mbps = max_speed_mbps
         self._stop_flag = threading.Event()
         self._pause_flag = threading.Event()
         self._active_threads = []
@@ -305,7 +307,8 @@ class MultiConnectionFTP:
         chunk_file: str,
         thread_id: int,
         progress_callback: Optional[Callable[[int, int, float], None]] = None,
-        rotate_interval: int = 30
+        rotate_interval: int = 30,
+        max_speed_bytes_per_sec: Optional[float] = None
     ):
         """
         Download a chunk of a file with connection rotation
@@ -322,6 +325,7 @@ class MultiConnectionFTP:
             thread_id: Thread identifier
             progress_callback: Callback function(thread_id, bytes_downloaded, speed)
             rotate_interval: Seconds before rotating connection (default 30s)
+            max_speed_bytes_per_sec: Maximum speed in bytes/sec for this thread (None = unlimited)
 
         Flow:
             1. Create new FTP connection
@@ -333,6 +337,10 @@ class MultiConnectionFTP:
         bytes_downloaded = 0
         current_position = start
         chunk_size = end - start
+
+        # Speed limiting variables
+        speed_limit_start_time = time.time() if max_speed_bytes_per_sec else None
+        speed_limit_bytes_transferred = 0
 
         try:
             with open(chunk_file, 'wb') as f:
@@ -359,8 +367,10 @@ class MultiConnectionFTP:
                         - Connection rotation timing
                         - Progress tracking and speed calculation
                         - Byte range boundary enforcement
+                        - Speed limiting (if enabled)
                         """
                         nonlocal current_position, bytes_downloaded, chunk_bytes
+                        nonlocal speed_limit_start_time, speed_limit_bytes_transferred
 
                         # Check pause flag - wait while paused
                         while self._pause_flag.is_set():
@@ -391,6 +401,19 @@ class MultiConnectionFTP:
                         current_position += written
                         bytes_downloaded += written
                         chunk_bytes += written
+
+                        # Apply speed limiting if enabled
+                        if max_speed_bytes_per_sec:
+                            speed_limit_bytes_transferred += written
+                            elapsed_time = time.time() - speed_limit_start_time
+
+                            # Calculate expected time for bytes transferred at target speed
+                            expected_time = speed_limit_bytes_transferred / max_speed_bytes_per_sec
+
+                            # Sleep if we're going too fast
+                            if elapsed_time < expected_time:
+                                sleep_time = expected_time - elapsed_time
+                                time.sleep(sleep_time)
 
                         # Calculate speed and report progress
                         if progress_callback:
@@ -465,6 +488,13 @@ class MultiConnectionFTP:
             # Calculate chunk size
             chunk_size = file_size // num_connections
 
+            # Calculate speed limit per thread (if enabled)
+            max_speed_bytes_per_sec = None
+            if self.max_speed_mbps:
+                # Convert MB/s to bytes/s and divide by number of connections
+                total_bytes_per_sec = self.max_speed_mbps * 1024 * 1024
+                max_speed_bytes_per_sec = total_bytes_per_sec / num_connections
+
             # Create chunk files
             chunk_files = []
             threads = []
@@ -478,7 +508,7 @@ class MultiConnectionFTP:
                 # Create thread
                 thread = threading.Thread(
                     target=self.download_chunk,
-                    args=(remote_file, start, end, chunk_file, i, progress_callback, rotate_interval)
+                    args=(remote_file, start, end, chunk_file, i, progress_callback, rotate_interval, max_speed_bytes_per_sec)
                 )
                 thread.daemon = True
                 threads.append(thread)

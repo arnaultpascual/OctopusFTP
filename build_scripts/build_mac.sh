@@ -28,7 +28,7 @@ if [ ! -d "$VENV_DIR" ]; then
 
     /opt/homebrew/opt/python@3.12/bin/python3.12 -m venv "$VENV_DIR"
     $VENV_PYTHON -m pip install --upgrade pip --quiet
-    $VENV_PYTHON -m pip install pyinstaller pillow --quiet
+    $VENV_PYTHON -m pip install pyinstaller pillow matplotlib --quiet
     echo "✓ Build environment created"
     echo ""
 fi
@@ -75,6 +75,9 @@ $VENV_PYINSTALLER \
     --paths="$PROJECT_ROOT/lib" \
     --add-data="$PROJECT_ROOT/lib:lib" \
     --hidden-import='PIL._tkinter_finder' \
+    --hidden-import='matplotlib.backends.backend_tkagg' \
+    --hidden-import='numpy' \
+    --collect-all matplotlib \
     --osx-bundle-identifier com.octopusftp.app \
     --noconfirm \
     $ICON_ARG \
