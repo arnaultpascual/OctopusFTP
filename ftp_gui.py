@@ -41,12 +41,19 @@ class FTPDownloaderGUI:
 
         # Download tracking
         self.active_downloads: Dict[str, Dict] = {}
-        self.download_destination = os.path.expanduser("~/Downloads")
 
-        # Connection presets
-        self.connections_file = Path.home() / ".octopusftp" / "connections.json"
-        self.connections_file.parent.mkdir(parents=True, exist_ok=True)
+        # Settings and connection presets
+        self.config_dir = Path.home() / ".octopusftp"
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.connections_file = self.config_dir / "connections.json"
+        self.settings_file = self.config_dir / "settings.json"
+
         self.saved_connections = self._load_connections()
+        self.settings = self._load_settings()
+
+        # Load last download folder or use default
+        self.download_destination = self.settings.get("last_download_folder",
+                                                       os.path.expanduser("~/Downloads"))
 
         # Create UI
         self._create_widgets()
@@ -293,6 +300,26 @@ class FTPDownloaderGUI:
                 json.dump(self.saved_connections, f, indent=2)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save connections: {e}")
+
+    def _load_settings(self) -> Dict:
+        """Load application settings from JSON file"""
+        if not self.settings_file.exists():
+            return {}
+
+        try:
+            with open(self.settings_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+            return {}
+
+    def _save_settings(self):
+        """Save application settings to JSON file"""
+        try:
+            with open(self.settings_file, 'w') as f:
+                json.dump(self.settings, f, indent=2)
+        except Exception as e:
+            print(f"Error saving settings: {e}")
 
     def _get_connection_names(self) -> List[str]:
         """Get list of saved connection names"""
@@ -563,6 +590,10 @@ class FTPDownloaderGUI:
             # Truncate for display
             display_text = directory if len(directory) <= 50 else "..." + directory[-47:]
             self.dest_label.configure(text=display_text)
+
+            # Save the last used folder to settings
+            self.settings["last_download_folder"] = directory
+            self._save_settings()
 
     def _start_download(self):
         """Start downloading selected items"""
