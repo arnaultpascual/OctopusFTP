@@ -44,7 +44,7 @@ A high-performance multi-connection FTP/FTPS downloader with graphical interface
 
 The easiest way to get started is to download the latest release for your platform:
 
-**👉 [Download v0.8 Beta](https://github.com/arnaultpascual/OctopusFTP/releases)**
+**👉 [Download Latest Release](https://github.com/arnaultpascual/OctopusFTP/releases/latest)**
 
 #### Windows
 1. Download `OctopusFTP-Windows.exe`
