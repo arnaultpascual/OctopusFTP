@@ -202,11 +202,20 @@ class FTPDownloaderGUI:
         self.file_listbox.grid(row=1, column=0, sticky="nsew", padx=10, pady=(5, 10))
         self.file_listbox.grid_columnconfigure(0, weight=1)
 
+        # Loading indicator (overlay)
+        self.loading_label = ctk.CTkLabel(
+            self.file_listbox,
+            text="🔄 Loading files...",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=("#666666", "#AAAAAA")
+        )
+
         # FORCE mousewheel scroll to work on macOS
         self._bind_mousewheel(self.file_listbox)
 
         # Store file items
         self.file_items = []
+        self.is_loading = False
 
     def _create_downloads_section(self, parent):
         """Create downloads section (destination + active downloads)"""
@@ -481,8 +490,11 @@ class FTPDownloaderGUI:
 
     def _refresh_list(self):
         """Refresh file list"""
-        if not self.connected:
+        if not self.connected or self.is_loading:
             return
+
+        self.is_loading = True
+        self._show_loading()
 
         def list_thread():
             try:
@@ -490,13 +502,15 @@ class FTPDownloaderGUI:
                 self.root.after(0, lambda: self._populate_file_list(items))
             except Exception as e:
                 error_msg = str(e)
+                self.root.after(0, lambda: self._hide_loading())
                 self.root.after(0, lambda msg=error_msg: messagebox.showerror("Error", f"Failed to list directory: {msg}"))
+                self.is_loading = False
 
         threading.Thread(target=list_thread, daemon=True).start()
         self._update_status("🔄 Loading...")
 
     def _populate_file_list(self, items: List[FileInfo]):
-        """Populate file list with items"""
+        """Populate file list with items using batch rendering"""
         self._clear_file_list()
 
         # Reset scroll position to top
@@ -505,11 +519,38 @@ class FTPDownloaderGUI:
         # Sort: directories first, then files
         items.sort(key=lambda x: (not x.is_dir, x.name.lower()))
 
-        for item in items:
-            self._create_file_item(item)
+        # Update loading text with count
+        total_items = len(items)
+        self.loading_label.configure(text=f"🔄 Loading {total_items} files...")
 
-        self.path_label.configure(text=self.current_path)
-        self._update_status(f"🟢 Connected - {len(items)} items in {self.current_path}")
+        # Batch render to keep UI responsive
+        batch_size = 150  # Process 150 items at a time
+        batch_delay = 10  # 10ms delay between batches
+
+        def render_batch(start_index):
+            """Render a batch of items"""
+            end_index = min(start_index + batch_size, total_items)
+
+            # Create widgets for this batch
+            for i in range(start_index, end_index):
+                self._create_file_item(items[i])
+
+            # Update progress
+            progress_pct = int((end_index / total_items) * 100)
+            self.loading_label.configure(text=f"🔄 Loading... {progress_pct}%")
+
+            # Schedule next batch or finish
+            if end_index < total_items:
+                self.root.after(batch_delay, lambda: render_batch(end_index))
+            else:
+                # All done!
+                self._hide_loading()
+                self.path_label.configure(text=self.current_path)
+                self._update_status(f"🟢 Connected - {total_items} items in {self.current_path}")
+                self.is_loading = False
+
+        # Start rendering
+        render_batch(0)
 
     def _create_file_item(self, item: FileInfo):
         """Create a file/folder item widget"""
@@ -563,6 +604,14 @@ class FTPDownloaderGUI:
         for item in self.file_items:
             item.destroy()
         self.file_items.clear()
+
+    def _show_loading(self):
+        """Show loading indicator"""
+        self.loading_label.pack(expand=True, pady=50)
+
+    def _hide_loading(self):
+        """Hide loading indicator"""
+        self.loading_label.pack_forget()
 
     def _navigate_to(self, path):
         """Navigate to directory"""
