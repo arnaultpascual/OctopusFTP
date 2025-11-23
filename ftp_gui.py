@@ -747,7 +747,9 @@ class FTPDownloaderGUI:
             "max_history_duration": 120,  # Keep last 120 seconds of history
             "checksum": None,  # Will be calculated after download completes
             "checksum_algorithm": "SHA-256",  # Default algorithm
-            "checksum_status": None  # None, "calculating", "verified", "failed"
+            "checksum_status": None,  # None, "calculating", "verified", "failed"
+            "reconstruction_progress": 0,  # Bytes written during reconstruction
+            "is_reconstructing": False  # True when assembling chunks
         }
 
         # Create download widget
@@ -757,6 +759,13 @@ class FTPDownloaderGUI:
             if download_id in self.active_downloads:
                 self.active_downloads[download_id]["progress"][thread_id] = bytes_downloaded
                 self.active_downloads[download_id]["speeds"][thread_id] = speed
+                self.active_downloads[download_id]["last_update"] = time.time()
+
+        def reconstruction_callback(bytes_written, total_bytes):
+            """Called during file reconstruction to report progress"""
+            if download_id in self.active_downloads:
+                self.active_downloads[download_id]["reconstruction_progress"] = bytes_written
+                self.active_downloads[download_id]["is_reconstructing"] = True
                 self.active_downloads[download_id]["last_update"] = time.time()
 
         def complete_callback(success, message):
@@ -787,7 +796,8 @@ class FTPDownloaderGUI:
                 "num_connections": num_connections,
                 "progress_callback": progress_callback,
                 "complete_callback": complete_callback,
-                "rotate_interval": self.rotation_var.get()
+                "rotate_interval": self.rotation_var.get(),
+                "reconstruction_callback": reconstruction_callback
             },
             daemon=True
         ).start()
@@ -1038,6 +1048,18 @@ class FTPDownloaderGUI:
                 continue
 
             if info["status"] != "downloading":
+                continue
+
+            # Check if we're in reconstruction phase
+            if info["is_reconstructing"]:
+                # Show "Download 100%, Reconstruction X%"
+                reconst_bytes = info["reconstruction_progress"]
+                reconst_percentage = (reconst_bytes / info["size"] * 100) if info["size"] > 0 else 0
+                status_line = (
+                    f"Download 100% • Reconstruction {reconst_percentage:.1f}% • "
+                    f"{self._format_size(reconst_bytes)}/{self._format_size(info['size'])}"
+                )
+                self._update_download_status(download_id, status_line, "reconstructing")
                 continue
 
             # Calculate stats
