@@ -450,7 +450,8 @@ class MultiConnectionFTP:
         num_connections: int = 4,
         progress_callback: Optional[Callable[[int, int, float], None]] = None,
         complete_callback: Optional[Callable[[bool, str], None]] = None,
-        rotate_interval: int = 30
+        rotate_interval: int = 30,
+        reconstruction_callback: Optional[Callable[[int, int], None]] = None
     ):
         """
         Download a file using multiple parallel connections with connection rotation
@@ -466,6 +467,7 @@ class MultiConnectionFTP:
             progress_callback: Callback function(thread_id, bytes_downloaded, speed)
             complete_callback: Callback function(success, message)
             rotate_interval: Seconds before rotating connections (default 30s)
+            reconstruction_callback: Optional callback(bytes_written, total_bytes) for reconstruction progress
 
         Process:
             1. Get remote file size
@@ -528,12 +530,26 @@ class MultiConnectionFTP:
                     complete_callback(False, "Download cancelled")
                 return
 
-            # Reassemble file
+            # Reassemble file with progress reporting
+            bytes_written = 0
             with open(local_file, 'wb') as outfile:
-                for chunk_file in chunk_files:
+                for i, chunk_file in enumerate(chunk_files):
                     if os.path.exists(chunk_file):
+                        chunk_size = os.path.getsize(chunk_file)
                         with open(chunk_file, 'rb') as infile:
-                            outfile.write(infile.read())
+                            # Read and write in smaller blocks for progress updates
+                            block_size = 8192  # 8KB blocks
+                            while True:
+                                data = infile.read(block_size)
+                                if not data:
+                                    break
+                                outfile.write(data)
+                                bytes_written += len(data)
+
+                                # Report reconstruction progress
+                                if reconstruction_callback:
+                                    reconstruction_callback(bytes_written, file_size)
+
                         os.remove(chunk_file)
 
             if complete_callback:
