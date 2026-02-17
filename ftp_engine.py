@@ -351,9 +351,6 @@ class MultiConnectionFTP:
                     # Random delay to appear natural
                     time.sleep(random.uniform(0.1, 0.5))
 
-                    # Resume from current position
-                    ftp.sendcmd(f'REST {current_position}')
-
                     rotation_start = time.time()
                     chunk_start_time = time.time()
                     chunk_bytes = 0
@@ -423,7 +420,7 @@ class MultiConnectionFTP:
 
                     try:
                         # Start retrieval
-                        ftp.retrbinary(f'RETR {remote_file}', write_callback, blocksize=8192)
+                        ftp.retrbinary(f'RETR {remote_file}', write_callback, blocksize=8192, rest=current_position)
                     except StopIteration:
                         pass  # Normal rotation or completion
                     except Exception as e:
@@ -451,7 +448,8 @@ class MultiConnectionFTP:
         progress_callback: Optional[Callable[[int, int, float], None]] = None,
         complete_callback: Optional[Callable[[bool, str], None]] = None,
         rotate_interval: int = 30,
-        reconstruction_callback: Optional[Callable[[int, int], None]] = None
+        reconstruction_callback: Optional[Callable[[int, int], None]] = None,
+        low_resource: bool = False
     ):
         """
         Download a file using multiple parallel connections with connection rotation
@@ -468,6 +466,7 @@ class MultiConnectionFTP:
             complete_callback: Callback function(success, message)
             rotate_interval: Seconds before rotating connections (default 30s)
             reconstruction_callback: Optional callback(bytes_written, total_bytes) for reconstruction progress
+            low_resource: Reduce I/O pressure for NAS/weak hardware (smaller buffer + yield between writes)
 
         Process:
             1. Get remote file size
@@ -500,16 +499,28 @@ class MultiConnectionFTP:
             # Create chunk files
             chunk_files = []
             threads = []
+            chunk_expected_sizes = []
+            thread_errors = []
+            thread_errors_lock = threading.Lock()
+
+            def thread_target(t_remote_file, t_start, t_end, t_chunk_file, t_id, t_progress_cb, t_rotate, t_speed):
+                """Wrapper that catches exceptions from download_chunk and stores them."""
+                try:
+                    self.download_chunk(t_remote_file, t_start, t_end, t_chunk_file, t_id, t_progress_cb, t_rotate, t_speed)
+                except Exception as exc:
+                    with thread_errors_lock:
+                        thread_errors.append((t_id, exc))
 
             for i in range(num_connections):
                 start = i * chunk_size
                 end = file_size if i == num_connections - 1 else (i + 1) * chunk_size
                 chunk_file = f"{local_file}.part{i}"
                 chunk_files.append(chunk_file)
+                chunk_expected_sizes.append(end - start)
 
                 # Create thread
                 thread = threading.Thread(
-                    target=self.download_chunk,
+                    target=thread_target,
                     args=(remote_file, start, end, chunk_file, i, progress_callback, rotate_interval, max_speed_bytes_per_sec)
                 )
                 thread.daemon = True
@@ -524,33 +535,78 @@ class MultiConnectionFTP:
             for thread in threads:
                 thread.join()
 
+            # Check for thread errors
+            if thread_errors and not self._stop_flag.is_set():
+                error_msgs = [f"Thread {tid}: {exc}" for tid, exc in thread_errors]
+                raise RuntimeError(f"Download threads failed:\n" + "\n".join(error_msgs))
+
             # Check if stopped
             if self._stop_flag.is_set():
                 if complete_callback:
                     complete_callback(False, "Download cancelled")
                 return
 
+            # Validate all chunks before reassembly
+            for i, chunk_file in enumerate(chunk_files):
+                if not os.path.exists(chunk_file):
+                    raise RuntimeError(f"Chunk {i} missing: {chunk_file}")
+                actual_size = os.path.getsize(chunk_file)
+                expected_size = chunk_expected_sizes[i]
+                if actual_size != expected_size:
+                    raise RuntimeError(
+                        f"Chunk {i} size mismatch: expected {expected_size} bytes, got {actual_size} bytes"
+                    )
+
             # Reassemble file with progress reporting
+            # Low resource mode: 256KB buffer + 2ms yield between writes (~70-80% I/O usage)
+            # Normal mode: 1MB buffer, no yield (full speed)
+            recon_block_size = 256 * 1024 if low_resource else 1024 * 1024
+            recon_yield = 0.002 if low_resource else 0  # seconds between writes
+
+            reconstruction_cancelled = False
             bytes_written = 0
             with open(local_file, 'wb') as outfile:
                 for i, chunk_file in enumerate(chunk_files):
-                    if os.path.exists(chunk_file):
-                        chunk_size = os.path.getsize(chunk_file)
-                        with open(chunk_file, 'rb') as infile:
-                            # Read and write in smaller blocks for progress updates
-                            block_size = 8192  # 8KB blocks
-                            while True:
-                                data = infile.read(block_size)
-                                if not data:
-                                    break
-                                outfile.write(data)
-                                bytes_written += len(data)
+                    if reconstruction_cancelled:
+                        break
+                    with open(chunk_file, 'rb') as infile:
+                        block_size = recon_block_size
+                        while True:
+                            if self._stop_flag.is_set():
+                                reconstruction_cancelled = True
+                                break
 
-                                # Report reconstruction progress
-                                if reconstruction_callback:
-                                    reconstruction_callback(bytes_written, file_size)
+                            data = infile.read(block_size)
+                            if not data:
+                                break
+                            outfile.write(data)
+                            bytes_written += len(data)
 
+                            # Report reconstruction progress
+                            if reconstruction_callback:
+                                reconstruction_callback(bytes_written, file_size)
+
+                            # Yield I/O time for NAS/low-resource systems
+                            if recon_yield:
+                                time.sleep(recon_yield)
+
+                    if not reconstruction_cancelled:
                         os.remove(chunk_file)
+
+            if reconstruction_cancelled:
+                # Clean up partial output and remaining chunk files
+                try:
+                    os.remove(local_file)
+                except OSError:
+                    pass
+                for cf in chunk_files:
+                    try:
+                        os.remove(cf)
+                    except OSError:
+                        pass
+                if complete_callback:
+                    complete_callback(False, "Download cancelled during reconstruction")
+                return
 
             if complete_callback:
                 complete_callback(True, f"Downloaded successfully: {local_file}")

@@ -21,7 +21,8 @@ class ChecksumCalculator:
     def calculate_file_hash(
         file_path: str,
         algorithm: str = 'SHA-256',
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        buffer_size: Optional[int] = None
     ) -> str:
         """
         Calculate hash of a file
@@ -30,6 +31,7 @@ class ChecksumCalculator:
             file_path: Path to the file
             algorithm: Hash algorithm (MD5, SHA-1, SHA-256, SHA-512)
             progress_callback: Optional callback(bytes_processed, total_bytes)
+            buffer_size: Read buffer size in bytes (default 1MB, use smaller for NAS/low-resource)
 
         Returns:
             Hexadecimal hash string
@@ -52,7 +54,7 @@ class ChecksumCalculator:
 
         file_size = file_path_obj.stat().st_size
         bytes_processed = 0
-        block_size = 8192  # 8KB blocks
+        block_size = buffer_size if buffer_size else 1024 * 1024  # Default 1MB
 
         with open(file_path, 'rb') as f:
             while True:

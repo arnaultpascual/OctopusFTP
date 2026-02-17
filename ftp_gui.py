@@ -173,6 +173,16 @@ class FTPDownloaderGUI:
         ctk.CTkLabel(config_frame, text="(0 = unlimited)", text_color="gray",
                     font=ctk.CTkFont(size=9)).pack(side="left", padx=(0, 10))
 
+        # Low resource mode (NAS-friendly: smaller buffers + I/O yield)
+        self.low_resource_var = ctk.BooleanVar(value=self.settings.get("low_resource_mode", False))
+        self.low_resource_checkbox = ctk.CTkCheckBox(
+            config_frame, text="NAS / Low Resource",
+            variable=self.low_resource_var,
+            command=self._on_low_resource_changed,
+            font=ctk.CTkFont(size=11)
+        )
+        self.low_resource_checkbox.pack(side="left", padx=(20, 10))
+
     def _create_browser_content(self, parent):
         """Create file browser frame"""
         frame = ctk.CTkFrame(parent, corner_radius=10)
@@ -329,6 +339,11 @@ class FTPDownloaderGUI:
                 json.dump(self.settings, f, indent=2)
         except Exception as e:
             print(f"Error saving settings: {e}")
+
+    def _on_low_resource_changed(self):
+        """Persist low resource mode toggle to settings"""
+        self.settings["low_resource_mode"] = self.low_resource_var.get()
+        self._save_settings()
 
     def _get_connection_names(self) -> List[str]:
         """Get list of saved connection names"""
@@ -797,7 +812,8 @@ class FTPDownloaderGUI:
                 "progress_callback": progress_callback,
                 "complete_callback": complete_callback,
                 "rotate_interval": self.rotation_var.get(),
-                "reconstruction_callback": reconstruction_callback
+                "reconstruction_callback": reconstruction_callback,
+                "low_resource": self.low_resource_var.get()
             },
             daemon=True
         ).start()
@@ -940,8 +956,9 @@ class FTPDownloaderGUI:
             info["checksum_status"] = "calculating"
             self.root.after(0, lambda: self._update_checksum_display(download_id))
 
-            # Calculate checksum
-            checksum = ChecksumCalculator.calculate_file_hash(local_path, algorithm)
+            # Calculate checksum (use smaller buffer in low resource mode)
+            buf_size = 256 * 1024 if self.low_resource_var.get() else None
+            checksum = ChecksumCalculator.calculate_file_hash(local_path, algorithm, buffer_size=buf_size)
             info["checksum"] = checksum
             info["checksum_status"] = "verified"
 
